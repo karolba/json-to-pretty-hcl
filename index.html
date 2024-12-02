@@ -301,16 +301,19 @@
         }
 
         /* copied from aws docs */
-        const defaultJson = {
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Sid": "DenyAllUsersNotUsingMFA",
-                "Effect": "Deny",
-                "NotAction": "iam:*",
-                "Resource": "*",
-                "Condition": {"BoolIfExists": {"aws:MultiFactorAuthPresent": "false"}}
-            }]
-        }
+        const defaultJson =
+            '{\n' +
+            '    "Version": "2012-10-17",\n' +
+            '    "Statement": [\n' +
+            '        {\n' +
+            '            "Sid": "DenyAllUsersNotUsingMFA",\n' +
+            '            "Effect": "Deny",\n' +
+            '            "NotAction": "iam:*",\n' +
+            '            "Resource": "*",\n' +
+            '            "Condition": { "BoolIfExists": { "aws:MultiFactorAuthPresent": "false" } }\n' +
+            '        }\n' +
+            '    ]\n' +
+            '}\n'
 
         const jsoninput = document.getElementById('jsoninput')
         const hcloutput = document.getElementById('hcloutput')
@@ -326,7 +329,7 @@
         jsoninput.addEventListener('change', prettify, false);
 
         if (jsoninput.value == '')
-            jsoninput.value = JSON.stringify(defaultJson, null, 4)
+            jsoninput.value = defaultJson
         prettify()
     </script>
 </body>
