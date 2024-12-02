@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta charset="UTF-8">
+    <title>JSON to pretty OpenTofu jsonencode</title>
+    <meta name="description" content="Convert from raw JSON to a pretty jsonencode() call for OpenTofu/Hashicorp Terraform">
+    <link rel="stylesheet" href="JSON%20to%20pretty%20OpenTofu%20jsonencode_files/picnic.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        main {
+            padding: 10px;
+            max-width: 1320px;
+            width: 100%;
+            margin: 100px auto 500px;
+        }
+        body {
+            font-size: 1em; /* don't be as big as Picnic.css wants us to be */
+        }
+        textarea {
+            min-height: calc(95vh - 10em);
+            font-family:Consolas,Monaco,Lucida Console,Liberation Mono,DejaVu Sans Mono,Bitstream Vera Sans Mono,Courier New,monospace;
+            white-space: pre;
+            overflow-wrap: normal;
+            overflow-x: scroll;
+            font-size: 0.75em;
+        }
+    </style>
+<body>
+    <nav>
+        <div class="brand"><span>Convert JSON to pretty OpenTofu/Terraform</span></div>
+        <div class="menu">
+            <a href="https://github.com/karolba/json-to-pretty-hcl" class="pseudo button icon-g">GitHub</a>
+        </div>
+    </nav>
+    <main>
+        <div class="flex one two-700">
+            <div>
+                JSON
+                <textarea id="jsoninput"></textarea>
+        </div>
+            <div>
+                Output HCL with <code>jsonencode()</code>
+                <textarea id="hcloutput" readonly="readonly"></textarea>
+            </div>
+        </div>
+    </main>
+    <script>
+        /*
+         * Parse JSON ourselves to be able to:
+         * - accurately represent numbers from input JSON (so we don't lose precision and keep the formatting,
+         *   etc so 67.02e9 doesn't turn into 67020000000)
+         * - keep how strings were formatted in the input - were complicated unicode characters escaped, or
+         *   included verbatim?
+         * - keep duplicate keys in objects verbatim
+         *
+         * This class is (heavily) adapted from https://gist.github.com/ptrelford/e98ccda0aa4b406dea4f37e3c5a75ae9
+         */
+        class JsonParser {
+            parse(str, options) {
+                this.input = str
+                this.i = 0
+                return this.parseValue()
+            }
+            isWhiteSpace(c) {
+                return ' \r\n\t'.includes(c)
+            }
+            skipWhiteSpace() {
+                while (this.i < this.input.length && this.isWhiteSpace(this.input.charAt(this.i))) {
+                    this.i++
+                }
+            }
+            parseValue() {
+                this.skipWhiteSpace()
+                if (this.i == this.input.length) return null
+                let c = this.input.charAt(this.i)
+                if (c == '{') return this.parseObject()
+                else if (c == '[') return this.parseArray()
+                else if (c == '\"') return this.parseString('\"')
+                else if ('-0123456789.'.includes(c)) return this.parseNumber()
+                else if (c == 't') return this.parseLiteral('true', { type: 'boolean', value: 'true' })
+                else if (c == 'f') return this.parseLiteral('false', { type: 'boolean', value: 'false' })
+                else if (c == 'n') return this.parseLiteral('null', { type: 'null', value: 'null' })
+                else if (c == 'N') return this.parseLiteral('NaN', { type: 'number', value: 'NaN' })
+                throw "Invalid json" // TODO - error handling with positions?
+            }
+            parseLiteral(expectedLiteral, value) {
+                if (expectedLiteral.length > this.input.length - this.i) {
+                    throw "Expecting " + expectedLiteral
+                }
+                for (const chr of expectedLiteral) {
+                    if (chr != this.input.charAt(this.i++)) {
+                        throw "Expecting " + expectedLiteral
+                    }
+                }
+                return value
+            }
+            parseNumber() {
+                const startIndex = this.i
+                while('-0123456789.eE'.includes(this.input.charAt(this.i))) {
+                    this.i++
+                }
+                return {
+                    type: 'number',
+                    value: this.input.substring(startIndex, this.i)
+                }
+            }
+            parseString(quote) {
+                this.i++
+                let c
+                let s = ''
+                while((c = this.input.charAt(this.i)) != quote) {
+                    const next = this.input.charAt(this.i + 1)
+                    s += c
+                    this.i++
+                    if (c == '\\' && '\\"\''.includes(next)) {
+                        s += next
+                        this.i++
+                    }
+                }
+                this.i++
+                return {
+                    type: 'string',
+                    value: `${quote}${s}${quote}`
+                }
+            }
+            parseObject() {
+                this.i++
+                this.skipWhiteSpace()
+                let values = []
+                if (this.input.charAt(this.i) == '}') {
+                    this.i++
+                    return { type: 'object', values }
+                }
+                let c
+                while (true) {
+                    const name = this.parseValue()
+                    if (name.type != 'string') {
+                        throw `Expecected an object key to be a string, got ${name.type}`
+                    }
+                    this.skipWhiteSpace()
+                    this.parseLiteral(':', null)
+                    this.skipWhiteSpace()
+                    const value = this.parseValue()
+                    this.skipWhiteSpace()
+                    values.push({ key: name.value, value })
+                    c = this.input.charAt(this.i)
+                    if (c == ',') {
+                        this.i++
+                        this.skipWhiteSpace()
+                    } else {
+                        break
+                    }
+                }
+                if (c != '}') {
+                    throw "Expecting a '}'"
+                }
+                this.i++
+                return { type: 'object', values }
+            }
+            parseArray() {
+                this.i++
+                this.skipWhiteSpace()
+                let values = []
+                if (this.input.charAt(this.i) == ']') {
+                    this.i++
+                    return { type: 'array', values }
+                }
+                let c
+                while (true) {
+                    const value = this.parseValue()
+                    values.push(value)
+                    this.skipWhiteSpace()
+                    c = this.input.charAt(this.i)
+                    if (c == ',') {
+                        this.i++
+                        this.skipWhiteSpace()
+                    } else {
+                        break
+                    }
+                }
+                if (c != ']') {
+                    throw "Expecting ]"
+                }
+                this.i++
+                return { type: 'array', values }
+            }
+        }
+
+
+        /* Format parsed JSON (from the JsonParser above) into a neat jsonencode call */
+        class Formatter {
+            constructor(tabspaces = 4) {
+                this.tabspaces = tabspaces
+            }
+            format(input) {
+                this.output = ''
+                this.visit(input)
+                return this.output.trim()
+            }
+            escapeHCLString(string) {
+                const replacements = {
+                    '${': '$${',
+                    '%{': '%%{',
+                }
+                return string.replace(/\${|%{/g, match => replacements[match])
+            }
+            readableObjectKey(key) {
+                let parsedKey = JSON.parse(key)
+                if (typeof parsedKey == 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(parsedKey)) {
+                    return parsedKey
+                } else {
+                    return this.escapeHCLString(key)
+                }
+            }
+            out(str) {
+                this.output += str
+            }
+            visitNull({value, type}, indent, commaAfterValue) {
+                this.out(`null${commaAfterValue}\n`)
+            }
+            visitBoolean({value, type}, indent, commaAfterValue) {
+                this.out(`${value}${commaAfterValue}\n`)
+            }
+            visitNumber({value, type}, indent, commaAfterValue) {
+                this.out(`${value}${commaAfterValue}\n`)
+            }
+            visitString({value, type}, indent, commaAfterValue) {
+                this.out(`${this.escapeHCLString(value)}${commaAfterValue}\n`)
+            }
+            visitArray({values, type}, indent, commaAfterValue) {
+                if (values.length === 0) {
+                    this.out(`[]${commaAfterValue}\n`)
+                } else {
+                    this.out('[\n')
+                    values.forEach((element, i) => {
+                        this.out(' '.repeat(indent + this.tabspaces))
+                        this.visit(element, indent + this.tabspaces, i !== values.length - 1 ? ',' : '')
+                    })
+                    this.out(`${' '.repeat(indent)}]${commaAfterValue}\n`)
+                }
+            }
+            groupAdjacentOneLineObjects(values) {
+                let clusters = []
+                let currentCluster = []
+
+                for (const item of values) {
+                    if (item.isOneLine) {
+                        currentCluster.push(item)
+                    } else {
+                        if (currentCluster.length > 0) {
+                            clusters.push(currentCluster)
+                            currentCluster = []
+                        }
+                        clusters.push([item])
+                    }
+                }
+
+                if (currentCluster.length > 0) {
+                    clusters.push(currentCluster)
+                }
+                return clusters
+            }
+            isOneLine(node) {
+                return ['null', 'boolean', 'number', 'string'].includes(node.type) || (node.values.length == 0)
+            }
+            visitObject({values, type}, indent, commaAfterValue) {
+                if (values.length === 0) {
+                    this.out(`{}${commaAfterValue}\n`)
+                } else {
+                    this.out('{\n')
+                    values = values.map(({key, value}) => ({
+                        key,
+                        value,
+                        isOneLine: this.isOneLine(value),
+                        encodedKey: this.readableObjectKey(key)
+                    }))
+                    const clusters = this.groupAdjacentOneLineObjects(values)
+                    clusters.forEach(cluster => {
+                        let maxKeyLength = Math.max(...cluster.map(values => values.encodedKey.length))
+                        cluster.forEach(({encodedKey, value}, i) => {
+                            this.out(' '.repeat(indent + this.tabspaces))
+                            this.out(`${encodedKey}${' '.repeat(maxKeyLength - encodedKey.length)} = `)
+                            this.visit(value, indent + this.tabspaces, '')
+                        })
+                    })
+                    this.out(`${' '.repeat(indent)}}${commaAfterValue}\n`)
+                }
+            }
+
+            visit(node, indent = 0, commaAfterValue = '') {
+                const visitors = {
+                    'null': this.visitNull,
+                    boolean: this.visitBoolean,
+                    number: this.visitNumber,
+                    string: this.visitString,
+                    array: this.visitArray,
+                    object: this.visitObject
+                }
+                visitors[node.type].call(this, node, indent, commaAfterValue)
+            }
+        }
+
+        /* copied from aws docs */
+        const defaultJson = {
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Sid": "DenyAllUsersNotUsingMFA",
+                "Effect": "Deny",
+                "NotAction": "iam:*",
+                "Resource": "*",
+                "Condition": {"BoolIfExists": {"aws:MultiFactorAuthPresent": "false"}}
+            }]
+        }
+
+        const jsoninput = document.getElementById('jsoninput')
+        const hcloutput = document.getElementById('hcloutput')
+        function prettify() {
+            try {
+                let parsed = new JsonParser().parse(jsoninput.value)
+                hcloutput.value = `jsonencode(${new Formatter().format(parsed)})`
+            } catch (e) {
+                hcloutput.value = `Parse error: ${e}`
+            }
+        }
+        jsoninput.addEventListener('input', prettify, false);
+        jsoninput.addEventListener('change', prettify, false);
+
+        if (jsoninput.value == '')
+            jsoninput.value = JSON.stringify(defaultJson, null, 4)
+        prettify()
+    </script>
+</body>
+</html>
