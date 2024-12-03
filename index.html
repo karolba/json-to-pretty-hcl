@@ -64,9 +64,15 @@
             isWhiteSpace(c) {
                 return ' \r\n\t'.includes(c)
             }
+            next() {
+                if (this.i > this.input.length + 1) {
+                    throw "Unexpected end of input"
+                }
+                this.i++
+            }
             skipWhiteSpace() {
                 while (this.i < this.input.length && this.isWhiteSpace(this.input.charAt(this.i))) {
-                    this.i++
+                    this.next()
                 }
             }
             parseValue() {
@@ -88,16 +94,17 @@
                     throw "Expecting " + expectedLiteral
                 }
                 for (const chr of expectedLiteral) {
-                    if (chr != this.input.charAt(this.i++)) {
+                    if (chr != this.input.charAt(this.i)) {
                         throw "Expecting " + expectedLiteral
                     }
+                    this.next()
                 }
                 return value
             }
             parseNumber() {
                 const startIndex = this.i
                 while('-0123456789.eE'.includes(this.input.charAt(this.i))) {
-                    this.i++
+                    this.next()
                 }
                 return {
                     type: 'number',
@@ -105,30 +112,30 @@
                 }
             }
             parseString(quote) {
-                this.i++
+                this.next()
                 let c
                 let s = ''
                 while((c = this.input.charAt(this.i)) != quote) {
                     const next = this.input.charAt(this.i + 1)
                     s += c
-                    this.i++
+                    this.next()
                     if (c == '\\' && '\\"\''.includes(next)) {
                         s += next
-                        this.i++
+                        this.next()
                     }
                 }
-                this.i++
+                this.next()
                 return {
                     type: 'string',
                     value: `${quote}${s}${quote}`
                 }
             }
             parseObject() {
-                this.i++
+                this.next()
                 this.skipWhiteSpace()
                 let values = []
                 if (this.input.charAt(this.i) == '}') {
-                    this.i++
+                    this.next()
                     return { type: 'object', values }
                 }
                 let c
@@ -145,7 +152,7 @@
                     values.push({ key: name.value, value })
                     c = this.input.charAt(this.i)
                     if (c == ',') {
-                        this.i++
+                        this.next()
                         this.skipWhiteSpace()
                     } else {
                         break
@@ -154,15 +161,15 @@
                 if (c != '}') {
                     throw "Expecting a '}'"
                 }
-                this.i++
+                this.next()
                 return { type: 'object', values }
             }
             parseArray() {
-                this.i++
+                this.next()
                 this.skipWhiteSpace()
                 let values = []
                 if (this.input.charAt(this.i) == ']') {
-                    this.i++
+                    this.next()
                     return { type: 'array', values }
                 }
                 let c
@@ -172,7 +179,7 @@
                     this.skipWhiteSpace()
                     c = this.input.charAt(this.i)
                     if (c == ',') {
-                        this.i++
+                        this.next()
                         this.skipWhiteSpace()
                     } else {
                         break
@@ -181,7 +188,7 @@
                 if (c != ']') {
                     throw "Expecting ]"
                 }
-                this.i++
+                this.next()
                 return { type: 'array', values }
             }
         }
