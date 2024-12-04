@@ -2,4 +2,4 @@ https://json-to-pretty-jsonencode.baraniecki.eu
 
 TODO: a cli app
 
-![a screenshot](https://github.com/user-attachments/assets/a2c0f13d-8f37-440c-a566-7a65ec6e3e14)
+![a screenshot](https://github.com/user-attachments/assets/c59c72f7-3362-4eb6-987b-9be834eeefb7)

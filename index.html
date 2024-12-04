@@ -47,6 +47,7 @@
     <script>
         /*
          * Parse JSON ourselves to be able to:
+         * - support multiple JSON values one-after-another (mapped to multiple jsonencode() calls)
          * - accurately represent numbers from input JSON (so we don't lose precision and keep the formatting,
          *   etc so 67.02e9 doesn't turn into 67020000000)
          * - keep how strings were formatted in the input - were complicated unicode characters escaped, or
@@ -56,10 +57,16 @@
          * This class is (heavily) adapted from https://gist.github.com/ptrelford/e98ccda0aa4b406dea4f37e3c5a75ae9
          */
         class JsonParser {
-            parse(str, options) {
+            parse(str) {
                 this.input = str
                 this.i = 0
-                return this.parseValue()
+
+                let values = []
+                let parsed
+                while ((parsed = this.parseValue()) != null) {
+                    values.push(parsed)
+                }
+                return values
             }
             isOneOfChars(c, str) {
                 return c != '' && str.includes(c)
@@ -118,7 +125,7 @@
                 this.next()
                 let c
                 let s = ''
-                while((c = this.input.charAt(this.i)) != quote) {
+                while ((c = this.input.charAt(this.i)) != quote) {
                     const next = this.input.charAt(this.i + 1)
                     s += c
                     this.next()
@@ -323,14 +330,17 @@
             '            "Condition": { "BoolIfExists": { "aws:MultiFactorAuthPresent": "false" } }\n' +
             '        }\n' +
             '    ]\n' +
-            '}\n'
+            '}\n' +
+            '"paste your JSON here"\n'
 
         const jsoninput = document.getElementById('jsoninput')
         const hcloutput = document.getElementById('hcloutput')
         function prettify() {
             try {
-                let parsed = new JsonParser().parse(jsoninput.value)
-                hcloutput.value = `jsonencode(${new Formatter().format(parsed)})`
+                let parsedValues = new JsonParser().parse(jsoninput.value)
+                hcloutput.value = parsedValues
+                    .map(parsed => `jsonencode(${new Formatter().format(parsed)})`)
+                    .join('\n')
             } catch (e) {
                 hcloutput.value = `Parse error: ${e}`
             }
